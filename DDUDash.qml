@@ -24,6 +24,7 @@ import FileIO 1.0
 Item {
     id: root
     width: 800; height: 480
+    transform: Translate { y: root.vShift }   // V-SHIFT applies to the whole screen
 
     // ---- data interface (real rpmtest field names, dot-notation) ----------
     property var d: (typeof rpmtest !== 'undefined') ? rpmtest : null
@@ -186,6 +187,7 @@ Item {
     property bool engineOff: !selfTest && Math.round(rpmShown) < 1
     property bool placementSwap: false
     property bool hideTachNums: false
+    property int  vShift: 0        // V-SHIFT: move whole dash up/down (tall-driver aid), +/-40px
     property bool hideShiftLights: false
     property int  speedShown: (speedunits === 0) ? Math.round(speed) : Math.round(speed * 0.621371)
 
@@ -1165,6 +1167,7 @@ Item {
         root.peakShowOilTemp  = pI(rline(34), root.peakShowOilTemp  ? 1 : 0) !== 0;
         root.peakShowOilPress = pI(rline(35), root.peakShowOilPress ? 1 : 0) !== 0;
         root.peakShowCoolant  = pI(rline(36), root.peakShowCoolant  ? 1 : 0) !== 0;
+        root.vShift           = pI(rline(37), root.vShift);
         return found;
     }
     function saveConfig() {
@@ -1181,7 +1184,8 @@ Item {
                         (root.showPeakGauge ? 1 : 0), root.peakGaugePosition,
                         (root.peakShowRpm ? 1 : 0), (root.peakShowSpeed ? 1 : 0),
                         (root.peakShowAfr ? 1 : 0), (root.peakShowOilTemp ? 1 : 0),
-                        (root.peakShowOilPress ? 1 : 0), (root.peakShowCoolant ? 1 : 0)];
+                        (root.peakShowOilPress ? 1 : 0), (root.peakShowCoolant ? 1 : 0),
+                        root.vShift];
             var out = "";
             for (var i = 0; i < vals.length; i++) out += String(vals[i]) + "\n";
             cfg.open();
@@ -1250,6 +1254,7 @@ Item {
         { k: "afrLow",        label: "AFR LOW" },
         { k: "afrSource",     label: "AFR DISPLAY" },
         { k: "nightlight",    label: "NIGHTLIGHT" },
+        { k: "vshift",        label: "V-SHIFT" },
         { k: "exit",          label: "EXIT & SAVE" }
     ]
 
@@ -1280,6 +1285,7 @@ Item {
         if (k === "afrLow")        return root.afrLow.toFixed(2);
         if (k === "afrSource")     return root.afrSource === 0 ? "AFR" : root.afrSource === 1 ? "LAMBDA" : "OFF";
         if (k === "nightlight")    return String(root.nightlight) + " %";
+        if (k === "vshift")        return (root.vShift > 0 ? "+" : "") + root.vShift + " px";
         if (k === "exit")          return "UP TO SAVE";
         return "";
     }
@@ -1311,6 +1317,7 @@ Item {
         else if (k === "afrLow")      root.afrLow = Math.max(0.6, Math.min(1.2, root.afrLow + dir * 0.01));
         else if (k === "afrSource")   { root.afrSource = (root.afrSource + dir + 3) % 3; bg.requestPaint(); }
         else if (k === "nightlight")   root.nightlight = Math.max(10, Math.min(100, root.nightlight + dir * 5));
+        else if (k === "vshift")       root.vShift = Math.max(-40, Math.min(40, root.vShift + dir * 2));
         root.settingsRev++;
     }
 
@@ -1378,6 +1385,7 @@ Item {
     Rectangle {
         id: menuOverlay
         anchors.fill: parent
+        transform: Translate { y: -root.vShift }   // keep the menu fixed regardless of V-SHIFT
         visible: root.menuOpen
         color: "#f0020712"
         z: 999
