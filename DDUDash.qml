@@ -24,7 +24,6 @@ import FileIO 1.0
 Item {
     id: root
     width: 800; height: 480
-    transform: Translate { y: root.vShift }   // V-SHIFT applies to the whole screen
 
     // ---- data interface (real rpmtest field names, dot-notation) ----------
     property var d: (typeof rpmtest !== 'undefined') ? rpmtest : null
@@ -222,6 +221,12 @@ Item {
     // =======================================================================
     //  STATIC BACKGROUND CANVAS (Painted once on boot & setting changes)
     // =======================================================================
+    Item { id: dashView          // live-preview source (wraps the dash)
+        anchors.fill: parent
+        Item { id: dashShift
+            anchors.fill: parent
+            transform: Translate { y: root.vShift }   // V-SHIFT lives here so the preview shows it
+
     Canvas {
         id: bg
         anchors.fill: parent
@@ -889,7 +894,7 @@ Item {
             // Column headers
             Text { x: 20;  y: 0; text: "";      color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8 }
             Text { x: 88; y: 0; text: "LOW";   color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
-            Text { x: 154; y: 0; text: "HIGH";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
+            Text { x: 146; y: 0; text: "HIGH";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
 
             // Divider
             Rectangle { x: 20; y: 12; width: 184; height: 1; color: "#0d3659" }
@@ -903,7 +908,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 16; width: 50
+                x: 146; y: 16; width: 50
                 text: root.peakRpm > 0 ? String(Math.round(root.peakRpm)) : "--"
                 color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
@@ -921,7 +926,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 36; width: 50
+                x: 146; y: 36; width: 50
                 text: root.peakSpeed > 0 ? String(Math.round(root.speedunits === 0 ? root.peakSpeed : root.peakSpeed * 0.621371)) : "--"
                 color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
@@ -939,7 +944,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 56; width: 50
+                x: 146; y: 56; width: 50
                 text: root.peakOilTemp > -1e8 ? fmtTemp(root.peakOilTemp, root.oilTempUnits) : "--"
                 color: (root.peakOilTemp >= root.oilTempHigh) ? "#ff4444" : "#ffffff"
                 font.family: root.menuFont; font.bold: true; font.pixelSize: 11
@@ -958,7 +963,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 76; width: 50
+                x: 146; y: 76; width: 50
                 text: root.peakAfrMax > -1e8 ? (root.afrSource === 1 ? (root.peakAfrMax / 14.7).toFixed(2) : root.peakAfrMax.toFixed(1)) : "--"
                 color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
@@ -1091,6 +1096,15 @@ Item {
             }
         }
     }
+        }   // end dashShift
+        // ---- NIGHTLIGHT dimmer: inside dashView so it shows in the preview; brightness %
+        Rectangle {
+            anchors.fill: parent
+            color: "#000000"
+            opacity: (100 - root.nightlight) / 100 * 0.8
+            visible: root.nightlight < 100
+        }
+    }   // ---- end dashView (live-preview source)
 
     // =======================================================================
     //  FILEIO & CONFIG PERSISTENCE
@@ -1124,13 +1138,67 @@ Item {
         }
         root.cfgPath = root.cfgCandidates[root.cfgCandidates.length - 1];
     }
+    // Config is stored as key=value lines (hand-editable, order-independent). An
+    // older positional DDUDash.txt is detected (no "=") and read once, then rewritten
+    // in the new format on the next save, so existing files migrate.
     function loadConfig() {
         function pI(s, def) { return (s !== "" && s !== undefined && s !== null) ? parseInt(s)   : def; }
         function pF(s, def) { return (s !== "" && s !== undefined && s !== null) ? parseFloat(s) : def; }
-        var s0 = rline(0);
-        var found = (s0 !== "" && s0 !== undefined && s0 !== null);
-        if (!found) return false;
-        root.red          = pI(s0,         root.red);
+        var map = {}, any = false, sawEq = false, i, s, eq;
+        for (i = 0; i < 60; i++) {
+            s = rline(i);
+            if (s === "" || s === undefined || s === null) break;
+            any = true;
+            eq = String(s).indexOf("=");
+            if (eq > 0) { sawEq = true; map[String(s).slice(0, eq).trim()] = String(s).slice(eq + 1).trim(); }
+        }
+        if (!any) return false;
+        if (sawEq) {
+            function gI(k, def) { return (k in map) ? pI(map[k], def) : def; }
+            function gF(k, def) { return (k in map) ? pF(map[k], def) : def; }
+            function gB(k, def) { return (k in map) ? (pI(map[k], def ? 1 : 0) !== 0) : def; }
+            root.red            = gI("red",            root.red);
+            root.green          = gI("green",          root.green);
+            root.blue           = gI("blue",           root.blue);
+            root.rpmredline     = gI("rpmredline",     root.rpmredline);
+            root.rpmmax         = gI("rpmmax",         root.rpmmax);
+            root.rpmDamp        = gI("rpmDamp",        root.rpmDamp);
+            root.speedunits     = gI("speedunits",     root.speedunits);
+            root.distunits      = gI("distunits",      root.distunits);
+            root.coolantHigh    = gF("coolantHigh",    root.coolantHigh);
+            root.coolantLow     = gF("coolantLow",     root.coolantLow);
+            root.tempunits      = gI("tempunits",      root.tempunits);
+            root.fuelHigh       = gI("fuelHigh",       root.fuelHigh);
+            root.fuelLow        = gI("fuelLow",        root.fuelLow);
+            root.fuelDamp       = gI("fuelDamp",       root.fuelDamp);
+            root.oilTempHigh    = gF("oilTempHigh",    root.oilTempHigh);
+            root.oilTempLow     = gF("oilTempLow",     root.oilTempLow);
+            root.oilTempUnits   = gI("oilTempUnits",   root.oilTempUnits);
+            root.oilPressHigh   = gF("oilPressHigh",   root.oilPressHigh);
+            root.oilPressLow    = gF("oilPressLow",    root.oilPressLow);
+            root.oilPressUnits  = gI("oilPressUnits",  root.oilPressUnits);
+            root.batteryHigh    = gF("batteryHigh",    root.batteryHigh);
+            root.batteryLow     = gF("batteryLow",     root.batteryLow);
+            root.afrHigh        = gF("afrHigh",        root.afrHigh);
+            root.afrLow         = gF("afrLow",         root.afrLow);
+            root.nightlight     = gI("nightlight",     root.nightlight);
+            root.afrSource      = gI("afrSource",      root.afrSource);
+            root.placementSwap     = gB("placementSwap",     root.placementSwap);
+            root.hideTachNums      = gB("hideTachNums",      root.hideTachNums);
+            root.hideShiftLights   = gB("hideShiftLights",   root.hideShiftLights);
+            root.showPeakGauge     = gB("showPeakGauge",     root.showPeakGauge);
+            root.peakGaugePosition = gI("peakGaugePosition", root.peakGaugePosition);
+            root.peakShowRpm       = gB("peakShowRpm",       root.peakShowRpm);
+            root.peakShowSpeed     = gB("peakShowSpeed",     root.peakShowSpeed);
+            root.peakShowAfr       = gB("peakShowAfr",       root.peakShowAfr);
+            root.peakShowOilTemp   = gB("peakShowOilTemp",   root.peakShowOilTemp);
+            root.peakShowOilPress  = gB("peakShowOilPress",  root.peakShowOilPress);
+            root.peakShowCoolant   = gB("peakShowCoolant",   root.peakShowCoolant);
+            root.vShift         = gI("vShift",         root.vShift);
+            return true;
+        }
+        // ---- migration: no "=" seen -> read the old positional schema once ----
+        root.red          = pI(rline(0),   root.red);
         root.green        = pI(rline(1),   root.green);
         root.blue         = pI(rline(2),   root.blue);
         root.rpmredline   = pI(rline(3),   root.rpmredline);
@@ -1156,11 +1224,11 @@ Item {
         root.afrLow       = pF(rline(23),  root.afrLow);
         root.nightlight   = pI(rline(24),  root.nightlight);
         root.afrSource    = pI(rline(25),  root.afrSource);
-        root.placementSwap= pI(rline(26),  root.placementSwap ? 1 : 0) !== 0;
-        root.hideTachNums = pI(rline(27),  root.hideTachNums ? 1 : 0) !== 0;
-        root.hideShiftLights = pI(rline(28), root.hideShiftLights ? 1 : 0) !== 0;
-        root.showPeakGauge   = pI(rline(29), root.showPeakGauge ? 1 : 0) !== 0;
-        root.peakGaugePosition = pI(rline(30), root.peakGaugePosition);
+        root.placementSwap    = pI(rline(26), root.placementSwap ? 1 : 0) !== 0;
+        root.hideTachNums     = pI(rline(27), root.hideTachNums ? 1 : 0) !== 0;
+        root.hideShiftLights  = pI(rline(28), root.hideShiftLights ? 1 : 0) !== 0;
+        root.showPeakGauge    = pI(rline(29), root.showPeakGauge ? 1 : 0) !== 0;
+        root.peakGaugePosition= pI(rline(30), root.peakGaugePosition);
         root.peakShowRpm      = pI(rline(31), root.peakShowRpm      ? 1 : 0) !== 0;
         root.peakShowSpeed    = pI(rline(32), root.peakShowSpeed    ? 1 : 0) !== 0;
         root.peakShowAfr      = pI(rline(33), root.peakShowAfr      ? 1 : 0) !== 0;
@@ -1168,30 +1236,53 @@ Item {
         root.peakShowOilPress = pI(rline(35), root.peakShowOilPress ? 1 : 0) !== 0;
         root.peakShowCoolant  = pI(rline(36), root.peakShowCoolant  ? 1 : 0) !== 0;
         root.vShift           = pI(rline(37), root.vShift);
-        return found;
+        return true;
     }
     function saveConfig() {
         try {
-            var vals = [root.red, root.green, root.blue, root.rpmredline, root.rpmmax,
-                        root.rpmDamp, root.speedunits, root.distunits, root.coolantHigh.toFixed(1),
-                        root.coolantLow.toFixed(1), root.tempunits, root.fuelHigh, root.fuelLow,
-                        root.fuelDamp, root.oilTempHigh.toFixed(1), root.oilTempLow.toFixed(1), root.oilTempUnits,
-                        root.oilPressHigh.toFixed(1), root.oilPressLow.toFixed(1), root.oilPressUnits,
-                        root.batteryHigh.toFixed(1), root.batteryLow.toFixed(1),
-                        root.afrHigh.toFixed(2), root.afrLow.toFixed(2), root.nightlight,
-                        root.afrSource, (root.placementSwap ? 1 : 0), (root.hideTachNums ? 1 : 0),
-                        (root.hideShiftLights ? 1 : 0),
-                        (root.showPeakGauge ? 1 : 0), root.peakGaugePosition,
-                        (root.peakShowRpm ? 1 : 0), (root.peakShowSpeed ? 1 : 0),
-                        (root.peakShowAfr ? 1 : 0), (root.peakShowOilTemp ? 1 : 0),
-                        (root.peakShowOilPress ? 1 : 0), (root.peakShowCoolant ? 1 : 0),
-                        root.vShift];
-            var out = "";
-            for (var i = 0; i < vals.length; i++) out += String(vals[i]) + "\n";
+            var out =
+                "red="              + root.red                    + "\n" +
+                "green="            + root.green                  + "\n" +
+                "blue="             + root.blue                   + "\n" +
+                "rpmredline="       + root.rpmredline             + "\n" +
+                "rpmmax="           + root.rpmmax                 + "\n" +
+                "rpmDamp="          + root.rpmDamp                + "\n" +
+                "speedunits="       + root.speedunits             + "\n" +
+                "distunits="        + root.distunits              + "\n" +
+                "coolantHigh="      + root.coolantHigh.toFixed(1) + "\n" +
+                "coolantLow="       + root.coolantLow.toFixed(1)  + "\n" +
+                "tempunits="        + root.tempunits              + "\n" +
+                "fuelHigh="         + root.fuelHigh               + "\n" +
+                "fuelLow="          + root.fuelLow                + "\n" +
+                "fuelDamp="         + root.fuelDamp               + "\n" +
+                "oilTempHigh="      + root.oilTempHigh.toFixed(1) + "\n" +
+                "oilTempLow="       + root.oilTempLow.toFixed(1)  + "\n" +
+                "oilTempUnits="     + root.oilTempUnits           + "\n" +
+                "oilPressHigh="     + root.oilPressHigh.toFixed(1)+ "\n" +
+                "oilPressLow="      + root.oilPressLow.toFixed(1) + "\n" +
+                "oilPressUnits="    + root.oilPressUnits          + "\n" +
+                "batteryHigh="      + root.batteryHigh.toFixed(1) + "\n" +
+                "batteryLow="       + root.batteryLow.toFixed(1)  + "\n" +
+                "afrHigh="          + root.afrHigh.toFixed(2)     + "\n" +
+                "afrLow="           + root.afrLow.toFixed(2)      + "\n" +
+                "nightlight="       + root.nightlight             + "\n" +
+                "afrSource="        + root.afrSource              + "\n" +
+                "placementSwap="    + (root.placementSwap ? 1 : 0)    + "\n" +
+                "hideTachNums="     + (root.hideTachNums ? 1 : 0)     + "\n" +
+                "hideShiftLights="  + (root.hideShiftLights ? 1 : 0)  + "\n" +
+                "showPeakGauge="    + (root.showPeakGauge ? 1 : 0)    + "\n" +
+                "peakGaugePosition="+ root.peakGaugePosition          + "\n" +
+                "peakShowRpm="      + (root.peakShowRpm ? 1 : 0)      + "\n" +
+                "peakShowSpeed="    + (root.peakShowSpeed ? 1 : 0)    + "\n" +
+                "peakShowAfr="      + (root.peakShowAfr ? 1 : 0)      + "\n" +
+                "peakShowOilTemp="  + (root.peakShowOilTemp ? 1 : 0)  + "\n" +
+                "peakShowOilPress=" + (root.peakShowOilPress ? 1 : 0) + "\n" +
+                "peakShowCoolant="  + (root.peakShowCoolant ? 1 : 0)  + "\n" +
+                "vShift="           + root.vShift                 + "\n";
             cfg.open();
             cfg.writetoopenfile(out);
             cfg.close();
-        } catch (e) { console.log("GTDash: could not write config (" + e + ")"); }
+        } catch (e) { console.log("DDUDash: could not write config (" + e + ")"); }
     }
 
     Component.onCompleted: {
@@ -1321,6 +1412,36 @@ Item {
         root.settingsRev++;
     }
 
+    function helpText(k) {
+        if (k === "red" || k === "green" || k === "blue") return "Accent colour (0-255) for the tach and highlights.";
+        if (k === "rpmredline")    return "RPM where the redline / shift lights begin.";
+        if (k === "rpmmax")        return "Full-scale RPM at the top of the tach sweep.";
+        if (k === "rpmDamp")       return "Needle smoothing (1 = sharp, 10 = smooth).";
+        if (k === "speedunits")    return "Speed readout units (KM/H or MPH).";
+        if (k === "distunits")     return "Odometer / trip units (KM or MILES).";
+        if (k === "coolantHigh")   return "Coolant warns above this temperature.";
+        if (k === "coolantLow")    return "Coolant shown cold below this temperature.";
+        if (k === "tempunits")     return "Coolant temperature units.";
+        if (k === "fuelHigh")      return "Fuel sender reading for a full tank.";
+        if (k === "fuelLow")       return "Low-fuel warning below this level.";
+        if (k === "fuelDamp")      return "Fuel-gauge smoothing (0 = raw, 9 = smooth).";
+        if (k === "oilTempHigh")   return "Oil-temperature warning above this.";
+        if (k === "oilTempLow")    return "Oil shown cold below this temperature.";
+        if (k === "oilTempUnits")  return "Oil-temperature units (or OFF).";
+        if (k === "oilPressHigh")  return "Oil-pressure warning above this.";
+        if (k === "oilPressLow")   return "Low oil-pressure warning below this.";
+        if (k === "oilPressUnits") return "Oil-pressure units (or OFF).";
+        if (k === "batteryHigh")   return "Battery warning above this voltage.";
+        if (k === "batteryLow")    return "Battery warning below this voltage.";
+        if (k === "afrHigh")       return "AFR warning above this (lean).";
+        if (k === "afrLow")        return "AFR warning below this (rich).";
+        if (k === "afrSource")     return "AFR readout: AFR, Lambda, or OFF.";
+        if (k === "nightlight")    return "Display brightness (100% = full bright).";
+        if (k === "vshift")        return "Move the whole dash up / down for your seating height.";
+        if (k === "exit")          return "Save all settings and close the menu.";
+        return "";
+    }
+
     function evalEdges() {
         var u = dUp(), d = dDown(), l = dLeft(), r = dRight();
         var roseU = u && !pUp, roseD = d && !pDown;
@@ -1364,7 +1485,13 @@ Item {
         pUp = u; pDown = d; pLeft = l; pRight = r;
     }
 
-    Timer { interval: 40; repeat: true; running: true; onTriggered: evalEdges() }
+    Timer { interval: 30; repeat: true; running: true; onTriggered: evalEdges() }
+    Connections {
+        target: root.d
+        ignoreUnknownSignals: true
+        onInputsdataChanged:     root.evalEdges()   // fire on data change, not just the 30 ms poll
+        onUdp_packetdataChanged: root.evalEdges()
+    }
 
     // ---- turn-signal arrows (top corners), blinking with the flasher relay ----
     Image {   // left indicator (inputsdata 0x40)
@@ -1385,43 +1512,45 @@ Item {
     Rectangle {
         id: menuOverlay
         anchors.fill: parent
-        transform: Translate { y: -root.vShift }   // keep the menu fixed regardless of V-SHIFT
         visible: root.menuOpen
         color: "#f0020712"
         z: 999
 
         Rectangle {
+            id: panel
             anchors.centerIn: parent
-            width: 520; height: 380; radius: 6
+            width: 772; height: 452; radius: 6
             color: "#051120"; border.color: "#1eb8ff"; border.width: 1.5
+            property int visibleRows: 11
+            property int rowH: 30
 
             Text {
-                anchors.top: parent.top; anchors.topMargin: 14
+                anchors.top: parent.top; anchors.topMargin: 12
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "DDU 10 DASH SETTINGS"
-                color: "#1eb8ff"
-                font.family: root.menuFont; font.bold: true; font.pixelSize: 16
-                font.letterSpacing: 2
+                color: "#1eb8ff"; font.family: root.menuFont; font.bold: true
+                font.pixelSize: 18; font.letterSpacing: 2
             }
+            Rectangle { x: 24; y: 44; width: parent.width - 48; height: 2; color: "#1eb8ff"; opacity: 0.5 }
 
+            // ----- LEFT: settings list -----
             ListView {
                 id: menuList
-                anchors.top: parent.top; anchors.topMargin: 46
-                anchors.bottom: parent.bottom; anchors.bottomMargin: 46
-                anchors.left: parent.left; anchors.right: parent.right
-                anchors.leftMargin: 20; anchors.rightMargin: 20
+                x: 20; y: 56
+                width: 360; height: panel.visibleRows * panel.rowH
                 clip: true
+                interactive: false
                 model: root.menuRows
                 currentIndex: root.sel
-                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
-
+                highlightMoveDuration: 0
+                highlightRangeMode: ListView.ApplyRange
+                preferredHighlightBegin: 5 * panel.rowH
+                preferredHighlightEnd:   6 * panel.rowH
                 delegate: Rectangle {
-                    width: menuList.width; height: 32; radius: 3
+                    width: menuList.width; height: panel.rowH; radius: 3
                     readonly property bool isSelected: index === root.sel
                     color: isSelected ? "#0a3055" : (index % 2 === 0 ? "#030a14" : "transparent")
-                    border.color: isSelected ? "#1eb8ff" : "transparent"
-                    border.width: 1
-
+                    border.color: isSelected ? "#1eb8ff" : "transparent"; border.width: 1
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 12
                         anchors.verticalCenter: parent.verticalCenter
@@ -1438,13 +1567,39 @@ Item {
                     }
                 }
             }
+            Rectangle {   // scrollbar
+                visible: menuList.contentHeight > menuList.height
+                x: 386; y: 56; width: 4; height: panel.visibleRows * panel.rowH
+                radius: 2; color: "#102840"
+                Rectangle { x: 0; width: 4; radius: 2; color: "#1eb8ff"
+                    y: parent.height * menuList.visibleArea.yPosition
+                    height: Math.max(24, parent.height * menuList.visibleArea.heightRatio) }
+            }
+
+            // ----- RIGHT: live preview of the running dash + per-row help -----
+            Text { x: 406; y: 42; text: "LIVE PREVIEW"; color: "#4a7a9e"
+                   font.family: root.menuFont; font.bold: true; font.pixelSize: 12; font.letterSpacing: 1 }
+            Rectangle {
+                x: 406; y: 58; width: 344; height: 206
+                color: "#02060c"; border.color: "#1eb8ff"; border.width: 1; radius: 4; clip: true
+                ShaderEffectSource {
+                    anchors.fill: parent; anchors.margins: 1
+                    sourceItem: dashView
+                    live: root.menuOpen
+                    hideSource: false
+                }
+            }
+            Text {   // per-row help
+                x: 406; y: 278; width: 344; wrapMode: Text.WordWrap
+                text: root.helpText(root.menuRows[root.sel].k)
+                color: "#cfe0f5"; font.family: root.menuFont; font.pixelSize: 14
+            }
 
             Text {
-                anchors.bottom: parent.bottom; anchors.bottomMargin: 14
+                anchors.bottom: parent.bottom; anchors.bottomMargin: 12
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "\u25C0 \u25B6 MOVE   \u25B2 \u25BC CHANGE   EXIT ROW + \u25B2 SAVE & CLOSE"
-                color: "#4a7a9e"
-                font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                text: "\u25C0 \u25B6 MOVE   \u25B2 \u25BC CHANGE   EXIT ROW + \u25B2 SAVE"
+                color: "#4a7a9e"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
             }
         }
     }
