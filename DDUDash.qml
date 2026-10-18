@@ -1489,8 +1489,8 @@ Item {
     Connections {
         target: root.d
         ignoreUnknownSignals: true
-        onInputsdataChanged:     root.evalEdges()   // fire on data change, not just the 30 ms poll
-        onUdp_packetdataChanged: root.evalEdges()
+        function onInputsdataChanged()     { root.evalEdges(); }
+        function onUdp_packetdataChanged() { root.evalEdges(); }
     }
 
     // ---- turn-signal arrows (top corners), blinking with the flasher relay ----
